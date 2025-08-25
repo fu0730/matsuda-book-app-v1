@@ -636,7 +636,7 @@ st.title("📘 今日のあなたに、そっとよりそう本を探しまし�
 # テーマ選択（全幅）
 st.markdown("<div class='form-label'>テーマを選んでください</div>", unsafe_allow_html=True)
 interest = st.selectbox(
-    "",
+    "テーマ",
     (
         "自己理解・内省",
         "習慣・ライフスタイル",
@@ -655,7 +655,7 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     st.markdown("<div class='form-label'>今の気持ちに近いものを教えてください</div>", unsafe_allow_html=True)
     feeling = st.radio(
-        "",
+        "今の気持ち",
         (
             "前向きになりたい",
             "迷いを整理したい",
@@ -669,7 +669,7 @@ with col1:
 with col2:
     st.markdown("<div class='form-label'>今回はどんな読み方がしっくりきますか？</div>", unsafe_allow_html=True)
     extra = st.radio(
-        "",
+        "読み方",
         (
             "さらっと読みたい",
             "じっくり考えたい",
