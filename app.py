@@ -9,6 +9,7 @@ import io
 import re
 import difflib
 import textwrap
+import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
 
 st.set_page_config(
@@ -361,6 +362,111 @@ ISBN_OVERRIDE: dict[str, str] = {
 SHOW_COVERS: bool = True
 
 
+@st.cache_data(ttl=24*60*60)
+def find_isbn(title: str, author: str | None = None) -> str | None:
+    """Try to find ISBN-13 by querying NDL SRU API, then Google Books API as fallback.
+    Returns a 13-digit string or None.
+    """
+    if not title:
+        return None
+
+    def _clean(s: str) -> str:
+        s = s or ""
+        s = s.strip()
+        # remove Japanese quotes/parentheses and extra spaces
+        s = re.sub(r"[『』「」（）()\[\]【】]", " ", s)
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def _digits13(s: str) -> str | None:
+        digits = re.sub(r"[^0-9]", "", s or "")
+        return digits if len(digits) == 13 else None
+
+    q_title = _clean(str(title))
+    q_author = _clean(str(author)) if author else None
+
+    # --- 1) NDL SRU ---
+    try:
+        # Build SRU query
+        base = "https://iss.ndl.go.jp/api/sru"
+        # CQL: title AND creator (both quoted)
+        if q_author:
+            cql = f'title="{q_title}" AND creator="{q_author}"'
+        else:
+            cql = f'title="{q_title}"'
+        params = {
+            "operation": "searchRetrieve",
+            "maximumRecords": "5",
+            "query": cql,
+        }
+        r = requests.get(base, params=params, timeout=8)
+        if r.ok and r.text:
+            # XML parse
+            root = ET.fromstring(r.text)
+            # NS handling: dc namespace entries
+            ns = {
+                "srw": "http://www.loc.gov/zing/srw/",
+                "dc": "http://purl.org/dc/elements/1.1/",
+            }
+            # Iterate records
+            for rec in root.findall(".//srw:record", ns):
+                # identifiers may include ISBN
+                idents = rec.findall(".//dc:identifier", ns)
+                cand = None
+                for el in idents:
+                    cand = _digits13(el.text or "")
+                    if cand:
+                        break
+                if not cand:
+                    continue
+                # title similarity check
+                dctitle = rec.find(".//dc:title", ns)
+                if dctitle is not None and dctitle.text:
+                    got = _clean(dctitle.text).lower()
+                    want = q_title.lower()
+                    ratio = difflib.SequenceMatcher(None, want, got).ratio()
+                    if ratio >= 0.60:
+                        return cand
+    except Exception:
+        pass
+
+    # --- 2) Google Books API (optional key) ---
+    try:
+        gb_key = st.secrets.get("google_books_api_key")
+        q = f'intitle:"{q_title}"'
+        if q_author:
+            q += f' inauthor:"{q_author}"'
+        gparams = {
+            "q": q,
+            "maxResults": 5,
+            "printType": "books",
+            "langRestrict": "ja",
+        }
+        if gb_key:
+            gparams["key"] = gb_key
+        r2 = requests.get("https://www.googleapis.com/books/v1/volumes", params=gparams, timeout=8)
+        if r2.ok:
+            data = r2.json()
+            for it in data.get("items", []) or []:
+                vi = it.get("volumeInfo", {})
+                # title similarity
+                got = _clean(vi.get("title", "")).lower()
+                want = q_title.lower()
+                ratio = difflib.SequenceMatcher(None, want, got).ratio()
+                if not (got and ratio >= 0.58):
+                    continue
+                # pick ISBN_13
+                for ident in vi.get("industryIdentifiers", []) or []:
+                    if ident.get("type") == "ISBN_13":
+                        cand = _digits13(ident.get("identifier"))
+                        if cand:
+                            return cand
+    except Exception:
+        pass
+
+    return None
+
+
 @st.cache_data(ttl=60*60)
 def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> str | None:
     """
@@ -426,6 +532,30 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
                 r.headers.get("Content-Type", "").startswith("image/") or r.content[:2] == b"\xff\xd8"
             ):
                 return ob
+        # If we still don't have an ISBN, try to find one by title/author
+        if not clean_isbn:
+            try:
+                found = find_isbn(TITLE_OVERRIDE.get(title, title), author)
+                if found:
+                    clean_isbn = found
+                    # retry OpenBD
+                    ob2 = f"https://api.openbd.jp/v1/cover/{clean_isbn}.jpg"
+                    r_ob2 = requests.get(ob2, headers=headers, timeout=6)
+                    if r_ob2.status_code == 200 and (r_ob2.headers.get("Content-Type", "").startswith("image/") or r_ob2.content[:2] == b"\xff\xd8"):
+                        return ob2
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 1.5) Google Books cover by ISBN (no API key, direct content endpoint)
+    try:
+        if clean_isbn:
+            gb_isbn = f"https://books.google.com/books/content?vid=ISBN{clean_isbn}&printsec=frontcover&img=1&zoom=1"
+            r2 = requests.get(gb_isbn, headers=headers, timeout=6)
+            # Some responses may return 200 with an image; accept content-type image/*
+            if r2.status_code == 200 and (r2.headers.get("Content-Type", "").startswith("image/")):
+                return gb_isbn
     except Exception:
         pass
 
