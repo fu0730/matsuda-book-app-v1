@@ -1,78 +1,201 @@
 import streamlit as st
 import pandas as pd
 from urllib.parse import quote_plus
+from urllib.parse import quote as urlquote
 import numpy as np
 import html
 import requests
 import io
+import re
+import difflib
+import textwrap
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="📘 そっとよりそう本さがし",
     page_icon="📘",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 st.markdown(
     """
     <style>
+    :root {
+      --brand-bg: #F5F7FA;            /* neutral light */
+      --brand-card: #FFFFFF;
+      --brand-accent: #1D4ED8;        /* blue accent */
+      --brand-accent-weak: #EEF2FF;   /* pale blue */
+      --brand-text: #374151;          /* neutral dark */
+      --brand-border: #E6E6E6;        /* soft gray border */
+      --focus: #A5B4FC;               /* focus ring */
+    }
+    body { background: var(--brand-bg); }
     /* Base spacing */
     .main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 
-    /* Headings readability */
-    h1, h2, h3 { line-height: 1.3; }
+    /* Font family: 魔法の質問風・温かみある角丸/丸ゴシック */
+    html, body {
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: var(--brand-text);
+    }
+
+    /* Headings readability and brand style */
+    h1, h2, h3 {
+      line-height: 1.35;
+      font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+      letter-spacing: 0.02em;
+    }
+
+    /* Headings sizes and weight */
+    h1 {
+      font-size: 1.55rem !important;
+      font-weight: 700;
+      color: var(--brand-text);
+      margin: 0.2rem 0 0.85rem;
+      letter-spacing: 0.02em;
+      padding-bottom: 8px;
+      border-bottom: 3px solid var(--brand-border);
+    }
+    h2 {
+      font-size: 1.4rem !important;
+      font-weight: 700;
+      color: var(--brand-text);
+      margin: 1rem 0 0.7rem;
+      letter-spacing: 0.02em;
+    }
+    h3 {
+      font-size: 1.15rem !important;
+      font-weight: 500;
+      color: var(--brand-text);
+    }
 
     /* Make the main content column comfortably narrow on large screens */
     @media (min-width: 1024px) {
-      .main .block-container { max-width: 940px; }
+      .main .block-container { max-width: 1040px; }
     }
 
     /* Mobile tweaks */
     @media (max-width: 640px) {
       .stButton>button { width: 100%; }
-      .stRadio, .stSelectbox { font-size: 0.95rem; }
-      .stMarkdown p { font-size: 0.98rem; line-height: 1.7; }
+      .stRadio, .stSelectbox { font-size: 0.98rem; }
+      .stMarkdown p { font-size: 1.08rem; line-height: 1.7; }
     }
 
     /* Cards & grid for desktop/mobile */
     .hero-card, .book-card {
-      background: var(--card-bg, #fff);
-      border: 1px solid var(--card-border, #e6e6e6);
+      background: var(--brand-card);
+      border: 1px solid var(--brand-border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    /* Form card wrapper */
+    .form-card {
+      background: var(--brand-card);
+      border: 1px solid var(--brand-border);
       border-radius: 12px;
       padding: 16px 18px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      margin-bottom: 18px;
     }
     .hero-card { border-width: 2px; }
-    .hero-title, .book-title { font-weight: 700; margin-bottom: 6px; font-size: 1.12rem; line-height: 1.5; }
-    .hero-desc, .book-desc { margin: 8px 0 12px; line-height: 1.7; overflow-wrap: anywhere; }
+    .hero-title, .book-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+      font-size: 1.18rem;
+      line-height: 1.5;
+      color: var(--brand-text);
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      letter-spacing: 0.01em;
+    }
+    .hero-desc, .book-desc {
+      margin: 8px 0 12px;
+      line-height: 1.7;
+      overflow-wrap: anywhere;
+      color: var(--brand-text);
+      font-size: 1.1rem;
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    }
 
     .book-grid { display: grid; gap: 12px; }
     @media (min-width: 768px) { .book-grid { grid-template-columns: 1fr 1fr; } }
 
-    /* Link button */
-    .link-btn { display:inline-block; padding: 9px 14px; border-radius: 8px; text-decoration:none; border:1px solid #ddd; background:#eef2ff; color:#1d4ed8; border-color:#c7d2fe; font-size:1rem; }
-    .link-btn:hover { background:#e0e7ff; }
+    /* Link button (neutral/blue style) */
+    .link-btn {
+      display: inline-block;
+      padding: 8px 18px;
+      border-radius: 6px;
+      text-decoration: none;
+      background: var(--brand-accent-weak);
+      color: var(--brand-accent);
+      border: 1px solid #c7d2fe;
+      box-shadow: none;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: background 0.15s;
+      width: auto;
+      white-space: nowrap;
+      letter-spacing: 0.03em;
+    }
+    .link-btn:hover { background: #e0e7ff; color: var(--brand-accent); }
+
+    /* Primary button style */
+    .stButton>button {
+      background: var(--brand-accent-weak);
+      color: var(--brand-accent);
+      border: 1px solid #c7d2fe;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      box-shadow: none;
+      transition: background 0.15s ease, color 0.15s ease;
+      max-width: 360px;
+    }
+    .stButton>button:hover { background: #e0e7ff; color: var(--brand-accent); }
+
+    /* Focus ring for accessibility */
+    .link-btn:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+    .stButton>button:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
 
     /* Dark mode friendly defaults */
     @media (prefers-color-scheme: dark) {
       :root { --card-bg: #111418; --card-border: #242a31; }
-      .link-btn { border-color:#333; }
-      .link-btn:hover { background:#1c222b; }
+      .link-btn { border-color: #333; }
+      .link-btn:hover { background: #1c222b; }
     }
-
-    /* Typography & base */
-    html, body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-    body { -webkit-font-smoothing: antialiased; }
 
     /* Section spacing */
     .section { margin: 24px 0; }
 
-    /* Improve label wrapping */
-    .stSelectbox label, .stRadio label { white-space: normal; line-height: 1.5; }
+    /* Improve label wrapping & readability */
+    .stSelectbox label, .stRadio label {
+      white-space: normal;
+      line-height: 1.6;
+      font-size: 1.12rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--brand-text);
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      letter-spacing: 0.01em;
+    }
+
+    /* Custom form labels (to avoid Streamlit default label sizing) */
+    .form-label {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin: 14px 0 10px;
+      color: var(--brand-text);
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      letter-spacing: 0.01em;
+    }
+    @media (min-width: 768px) { .form-label { font-size: 1.25rem; } }
 
     /* Clamp long descriptions on mobile */
     @media (max-width: 640px) {
-      .book-desc { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+      .book-desc { display: block; -webkit-line-clamp: initial; -webkit-box-orient: initial; overflow: visible; }
     }
 
     /* details/summary styling */
@@ -80,42 +203,52 @@ st.markdown(
     details summary { cursor: pointer; color: #3366cc; outline: none; }
     details[open] summary { color: #555; }
 
+    /* 補足ラベル（補完本の注釈） */
+    .sub-label{ font-size: 0.92rem; color:#6b7280; margin:4px 0 6px; font-style: italic; }
+
+    /* Card grid for cover + body */
+    .card-grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+    @media (min-width: 768px) { .card-grid { grid-template-columns: 130px 1fr; } }
+    @media (min-width: 768px) { .hero-card .card-grid { grid-template-columns: 160px 1fr; } }
+    .card-cover img { width: 100%; height: auto; max-height: 200px; object-fit: contain; background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 8px; }
+    .card-body { display: flex; flex-direction: column; gap: 8px; justify-content: space-between; }
+    /* Keep link button aligned */
+    .card-body .link-btn {
+      align-self: flex-start;
+    }
+
+    /* PCでは右下寄せ */
+    @media (min-width: 768px) {
+      .card-body { flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
+      .card-body .link-btn { align-self: flex-end; }
+    }
+
     /* Larger touch targets on mobile */
     @media (max-width: 640px) {
-      .link-btn { width: 100%; text-align: center; padding: 12px 14px; }
+      .link-btn { width: 100%; text-align: center; padding: 14px 16px; }
     }
 
     /* Sections / dividers */
     .section { margin: 24px 0; }
     .section-hero { margin-bottom: 28px; }
     .section-others { margin-top: 14px; }
-    .divider { height: 1px; background: var(--card-border, #e6e6e6); margin: 14px 0; }
+    .divider { height: 1px; background: var(--brand-border); margin: 14px 0; }
 
-    /* 見出しサイズを少し抑える */
-    h1 { font-size: 1.4rem !important; }
-    h2 { font-size: 1.15rem !important; }
-
-    /* 本文や説明はほんの少し大きく */
+    /* 本文や説明は大きく温かく */
     .stMarkdown p, .book-desc {
-      font-size: 1.02rem;
-      line-height: 1.65;
+      font-size: 1.12rem;
+      line-height: 1.85;
+      font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+      color: var(--brand-text);
+      letter-spacing: 0.01em;
     }
-
-    /* Headings spacing/weight (控えめに) */
-    h1 { margin: 0.2rem 0 1.0rem; font-weight: 700; }
-    h2 { margin: 0.8rem 0 0.6rem; font-weight: 650; }
 
     /* Success alert: 少し控えめに */
     .stAlert { border-radius: 10px; margin: 8px 0 10px; }
-    .stAlert > div { padding: 8px 10px; font-size: 0.9rem; }
+    .stAlert > div { padding: 8px 10px; font-size: 0.94rem; }
 
     /* Radio/Select の行間とタップしやすさ */
-    .stRadio label, .stSelectbox label { margin-bottom: 4px; }
     .stRadio [role="radiogroup"] label { padding: 4px 2px; }
-
-    /* Amazonリンクをボタン風に（色弱でも見やすいコントラスト） */
-    .link-btn { background:#eef2ff; color:#1d4ed8; border-color:#c7d2fe; font-size:1rem; padding:9px 14px; }
-    .link-btn:hover { background:#e0e7ff; }
 
     /* カード間の余白をやや広く（PC） */
     @media (min-width: 1024px) {
@@ -124,12 +257,18 @@ st.markdown(
 
     /* Desktop typography boost */
     @media (min-width: 768px) {
-      h1 { font-size: 1.6rem !important; }
-      h2 { font-size: 1.25rem !important; }
-      .stMarkdown p, .book-desc { font-size: 1.05rem; line-height: 1.7; }
-      .stRadio, .stSelectbox { font-size: 1rem; }
-      .hero-title { font-size: 1.1rem; }
-      .book-title { font-size: 1.05rem; }
+      h1 { font-size: 1.8rem !important; }
+      h2 { font-size: 1.55rem !important; }
+      .stMarkdown p, .book-desc { font-size: 1.2rem; line-height: 1.9; }
+      .stRadio, .stSelectbox { font-size: 1.1rem; }
+      .hero-title { font-size: 1.26rem; }
+      .book-title { font-size: 1.16rem; }
+      .stSelectbox label, .stRadio label { font-size: 1.2rem; }
+    }
+    /* Two-column form: stack on mobile */
+    @media (max-width: 768px){
+      div[data-testid="column"]{ width:100% !important; flex: 1 0 100% !important; }
+      div[data-testid="stHorizontalBlock"]{ gap: 0.75rem !important; }
     }
     </style>
     """,
@@ -175,7 +314,7 @@ def load_books() -> pd.DataFrame:
             rename_map[c] = "description"
     df = df.rename(columns=rename_map)
     # 欠損カラムの安全対策
-    for col in ["title", "description", "amazon_url", "keywords"]:
+    for col in ["title", "description", "amazon_url", "keywords", "isbn"]:
         if col not in df.columns:
             df[col] = ""
     # 前後空白の除去
@@ -186,38 +325,235 @@ def load_books() -> pd.DataFrame:
         df = df.drop_duplicates(subset=["title"]).reset_index(drop=True)
     return df
 
+
+
+
 books = load_books()
 
+# タイトル補正（シート側を修正したため現状は未使用）
+TITLE_OVERRIDE: dict[str, str] = {}
+
+# プレースホルダー（SVG）を生成
+def build_placeholder_cover(bg: str = "#F2F4F7", fg: str = "#667085") -> str:
+    """大きなはてなマークと日本語テキストのプレースホルダー画像を返す。"""
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="320" height="450" viewBox="0 0 320 450">
+<rect width="100%" height="100%" fill="{bg}"/>
+<text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-size="160" font-weight="700" fill="{fg}">？</text>
+<text x="50%" y="70%" dominant-baseline="middle" text-anchor="middle" font-size="24" font-weight="700" fill="{fg}">表紙画像が</text>
+<text x="50%" y="84%" dominant-baseline="middle" text-anchor="middle" font-size="24" font-weight="700" fill="{fg}">見つかりませんでした</text>
+</svg>'''
+    return "data:image/svg+xml;utf8," + urlquote(svg)
+
+NO_COVER_IMG = build_placeholder_cover()
+
+def needs_placeholder(title: str) -> bool:
+    t = (title or "")
+    return "子どもの" in t and "考える力" in t and "魔法の質問" in t
+
+# 任意: タイトル→ISBN の手動オーバーライド（必要に応じて追記）
+ISBN_OVERRIDE: dict[str, str] = {
+    # "朝1分30の習慣": "",  # 例: "978429..."
+    # "愛と怖れの法則": "",
+    # "子どもの「考える力」が伸びる魔法の質問": "",
+}
+
+# --- v2: 表紙画像の表示ON/OFF ---
+SHOW_COVERS: bool = True
+
+
+@st.cache_data(ttl=60*60)
+def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> str | None:
+    """
+    表紙取得（OpenBD→Google Books）。Google Books は題名の類似度と著者確認で誤ヒットを防ぐ。
+    """
+    # タイトルに対する手動ISBNがあれば OpenBD を最優先
+    if title in ISBN_OVERRIDE and ISBN_OVERRIDE.get(title):
+        try:
+            ob = f"https://api.openbd.jp/v1/cover/{ISBN_OVERRIDE[title]}.jpg"
+            r = requests.get(ob, timeout=6)
+            if r.status_code == 200 and (r.headers.get("Content-Type", "").startswith("image/") or r.content[:2] == b"\xff\xd8"):
+                return ob
+        except Exception:
+            pass
+
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; matsuda-book-app/2.0)"}
+    def clean_author_string(s: str) -> str:
+        """Remove role annotations like 監修/編/著 and any parentheses, and collapse spaces (incl. full-width)."""
+        s = s or ""
+        # remove parentheses content e.g., （監修）, (Ed.), etc.
+        s = re.sub(r"[（(][^）)]*[)）]", "", s)
+        # remove common role markers
+        for mark in ("監修", "編", "著"):
+            s = s.replace(mark, "")
+        # collapse spaces (half/full width)
+        return s.replace(" ", "").replace("　", "")
+
+    def author_variants(a: str | None) -> list[str]:
+        if not a:
+            return []
+        a = a.strip()
+        # normalize both half-width and full-width spaces for variant generation
+        a_no_space = a.replace(" ", "").replace("　", "")
+        if a in ("マツダミヒロ", "マツダ ミヒロ", "松田充弘", "松田 充弘", "松田　充弘", "Mihiro", "Matsuda"):
+            return [
+                "マツダミヒロ", "マツダ ミヒロ",
+                "松田充弘", "松田 充弘", "松田　充弘",
+                "Mihiro", "Mihiro Matsuda", "Matsuda Mihiro", "Matsuda",
+            ]
+        if a in ("WAKANA", "ワカナ", "わかな"):
+            return ["WAKANA", "ワカナ", "わかな"]
+        # fallback: return original + no-space variants
+        return [a, a_no_space]
+
+    def norm(s: str) -> str:
+        """Normalize title for fuzzy match: keep Japanese letters, drop spaces & punctuation only."""
+        s = (s or "").lower().strip()
+        # remove common spaces and punctuation but KEEP CJK characters
+        remove_chars = " 　\t\n\r・:：、。!！?？『』「」（）()[]【】〈〉《》—–‐-／/,."  # extend as needed
+        table = str.maketrans({ch: "" for ch in remove_chars})
+        return s.translate(table)
+
+    # 1) OpenBD（ISBNがあれば高確度）
+    try:
+        clean_isbn = None
+        if isinstance(isbn, str):
+            digits = "".join(ch for ch in isbn if ch.isdigit())
+            clean_isbn = digits if digits else None
+        if clean_isbn:
+            ob = f"https://api.openbd.jp/v1/cover/{clean_isbn}.jpg"
+            r = requests.get(ob, headers=headers, timeout=6)
+            if r.status_code == 200 and (
+                r.headers.get("Content-Type", "").startswith("image/") or r.content[:2] == b"\xff\xd8"
+            ):
+                return ob
+    except Exception:
+        pass
+
+    # 2) Google Books（タイトル検索フォールバック）
+    GB_URL = "https://www.googleapis.com/books/v1/volumes"
+    # タイトル補正
+    query_title = TITLE_OVERRIDE.get(title, title)
+    # 検索クエリ候補（著者ゆらぎ＋素のタイトル）
+    queries = [
+        f'intitle:"{query_title}" inauthor:マツダミヒロ',
+        f'intitle:{query_title} inauthor:"マツダ ミヒロ"',
+        f'intitle:{query_title} inauthor:WAKANA',
+        f'intitle:{query_title} inauthor:"塩沢節子"',
+        f'intitle:{query_title}',
+        query_title,
+    ]
+    # 著者が分かっている場合は先頭に著者指定クエリを積む
+    if author:
+        queries.insert(0, f'intitle:"{query_title}" inauthor:{author}')
+
+    allowed_authors = [
+        "マツダミヒロ", "マツダ ミヒロ",
+        "松田充弘", "松田 充弘", "松田　充弘",
+        "Mihiro", "Mihiro Matsuda", "Matsuda Mihiro", "Matsuda",
+        "WAKANA", "ワカナ", "わかな",
+        # よく出る共著者
+        "塩沢節子", "日小田正人", "小田正人", "Oda", "Shiozawa"
+    ]
+    want_title = norm(query_title)
+
+    for q in queries:
+        try:
+            params = {"q": q, "maxResults": 5, "printType": "books", "projection": "lite", "langRestrict": "ja"}
+            g = requests.get(GB_URL, params=params, headers=headers, timeout=8)
+            data = g.json() if g.ok else {}
+            for it in data.get("items", []) or []:
+                info = (it.get("volumeInfo") or {})
+                api_title = info.get("title", "")
+                raw_authors = ", ".join(info.get("authors", []) or [])
+                api_authors = clean_author_string(raw_authors)
+                api_norm = norm(api_title)
+                # 題名類似度（0〜1）と部分一致
+                ratio = difflib.SequenceMatcher(None, want_title, api_norm).ratio()
+                title_ok = False
+                if want_title and api_norm:
+                    title_ok = (want_title in api_norm) or (api_norm in want_title) or (ratio >= 0.60)
+
+                # 著者チェック：与えた著者はゆらぎを広げて判定。未指定なら既知リスト。
+                author_ok = True
+                if author:
+                    variants = author_variants(author)
+                    author_ok = any(v in api_authors for v in variants)
+                else:
+                    author_ok = any(tok in api_authors for tok in allowed_authors)
+
+                # 通常判定
+                if title_ok and author_ok:
+                    links = info.get("imageLinks") or {}
+                    url = links.get("thumbnail") or links.get("smallThumbnail")
+                    if url:
+                        return url.replace("http://", "https://")
+
+                # フォールバック：タイトル強一致のみ（類似度が十分高い場合は著者不一致でも採用）
+                if ratio >= 0.72:
+                    links = info.get("imageLinks") or {}
+                    url = links.get("thumbnail") or links.get("smallThumbnail")
+                    if url:
+                        return url.replace("http://", "https://")
+        except Exception:
+            continue
+
+    return None
+
+# フォーム（テーマ:全幅, 気持ち/読み方:2カラム横並び）
 st.title("📘 今日のあなたに、そっとよりそう本を探しましょう")
 
-# 質問
-interest = st.selectbox("テーマを選んでください", (
-    "自己理解・内省",
-    "習慣・ライフスタイル",
-    "仕事・キャリア",
-    "人間関係・コミュニケーション",
-    "恋愛・パートナーシップ",
-    "子育て・教育",
-    "死生観・人生の意味"
-))
 
-feeling = st.radio("今の気持ちに近いものを教えてください", (
-    "前向きになりたい",
-    "迷いを整理したい",
-    "自分の軸を確かめたい",
-    "人間関係を整えたい",
-    "小さく動き出したい",
-))
-
-# 追加の一問（読み方/アプローチ軸）：精度を少し高める
-extra = st.radio(
-    "今回はどんな読み方がしっくりきますか？",
+# テーマ選択（全幅）
+st.markdown("<div class='form-label'>テーマを選んでください</div>", unsafe_allow_html=True)
+interest = st.selectbox(
+    "",
     (
-        "さらっと読みたい",
-        "じっくり考えたい",
-        "具体的に実践したい",
+        "自己理解・内省",
+        "習慣・ライフスタイル",
+        "仕事・キャリア",
+        "人間関係・コミュニケーション",
+        "恋愛・パートナーシップ",
+        "子育て・教育",
+        "死生観・人生の意味",
     ),
+    label_visibility="collapsed",
+    key="k_interest",
 )
+
+# 気持ち/読み方: 2カラム横並び
+col1, col2 = st.columns(2, gap="large")
+with col1:
+    st.markdown("<div class='form-label'>今の気持ちに近いものを教えてください</div>", unsafe_allow_html=True)
+    feeling = st.radio(
+        "",
+        (
+            "前向きになりたい",
+            "迷いを整理したい",
+            "自分の軸を確かめたい",
+            "人間関係を整えたい",
+            "小さく動き出したい",
+        ),
+        label_visibility="collapsed",
+        key="k_feeling",
+    )
+with col2:
+    st.markdown("<div class='form-label'>今回はどんな読み方がしっくりきますか？</div>", unsafe_allow_html=True)
+    extra = st.radio(
+        "",
+        (
+            "さらっと読みたい",
+            "じっくり考えたい",
+            "具体的に実践したい",
+        ),
+        label_visibility="collapsed",
+        key="k_extra",
+    )
+
+
+# 実行ボタン（フォームカード下・左寄せ）
+go = st.button("📖 本をえらぶ")
+st.markdown("<div style='margin: 20px 0;'></div>", unsafe_allow_html=True)
+st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 
 # --- 推薦ロジック用キーワード辞書 ---
 INTEREST_TO_KEYWORDS = {
@@ -251,11 +587,31 @@ EXTRA_TO_KEYWORDS = {
     ],
 }
 
+
+# 補足テーマ（不足時の関連ジャンル）
+RELATED_THEME = {
+    "恋愛・パートナーシップ": "人間関係・コミュニケーション",
+    "子育て・教育": "人間関係・コミュニケーション",
+    "死生観・人生の意味": "自己理解・内省",
+    "習慣・ライフスタイル": "自己理解・内省",
+    "仕事・キャリア": "人間関係・コミュニケーション",
+}
+
+# 補足ラベル（やさしい注釈）
+RELATED_THEME_LABELS = {
+    "恋愛・パートナーシップ": "ちょっと毛色は違いますが、人間関係のヒントになるかもしれませんね。",
+    "子育て・教育": "少し視点を変えて、教育の観点からも役立つかもしれませんね。",
+    "死生観・人生の意味": "自己理解のヒントとしても読めるかもしれませんね。",
+    "習慣・ライフスタイル": "日々に取り入れやすい小さな気づきになるかもしれませんね。",
+    "仕事・キャリア": "人との関わりの観点からも役立つかもしれませんね。",
+}
+
+# テーマから遠い語のペナルティ
 INTEREST_PENALTY = {
     "自己理解・内省": ["恋愛", "パートナー", "夫婦", "子育て", "教育", "マーケティング", "起業", "ビジネス"],
     "習慣・ライフスタイル": ["恋愛", "子育て", "マーケティング", "起業"],
     "仕事・キャリア": ["恋愛", "子育て", "死", "死生観"],
-    "人間関係・コミュニケーション": ["起業", "マーケティング", "マンダラ", "時間術"],
+    "人間関係・コミュニケーション": ["起業", "マーケティング", "マンダラ", "時間術", "子育て", "教育", "親子", "学校"],
     "恋愛・パートナーシップ": ["起業", "マーケティング", "仕事術"],
     "子育て・教育": ["恋愛", "マーケティング", "起業"],
     "死生観・人生の意味": ["マーケティング", "起業", "恋愛", "子育て"],
@@ -364,7 +720,7 @@ def filter_books(df: pd.DataFrame, interest_choice: str, feeling_choice: str, ex
         # それでも足りなければ全体
         return df
 
-if st.button("📖 本をえらぶ"):
+if 'go' in locals() and go:
     candidates = filter_books(books, interest, feeling, extra)
 
     if len(candidates) == 0:
@@ -378,72 +734,39 @@ if st.button("📖 本をえらぶ"):
     else:
         cand_sorted = candidates
 
+    # --- 補完本タイトル追跡 ---
+    supplemented_titles = set()
+
     if len(cand_sorted) >= 3:
-        # Prefer items that clearly match the selected theme
-        theme_regex = "|".join(INTEREST_TO_KEYWORDS.get(interest, []))
-        theme_mask_sorted = cand_sorted["_keys"].str.contains(theme_regex, case=False, na=False) | \
-                            cand_sorted["_title"].str.contains(theme_regex, case=False, na=False)
-        preferred = cand_sorted[theme_mask_sorted]
-        if len(preferred) >= 3:
-            picks = preferred.head(3)
+        # 1冊目：ドンピシャ（最上位）
+        pick1 = cand_sorted.iloc[0:1]
+        # 2冊目：次点（2番目）
+        pick2 = cand_sorted.iloc[1:2]
+        # 3冊目：探索枠（残りからランダム1冊）
+        remaining = cand_sorted.iloc[2:]
+        if len(remaining) >= 1:
+            pick3 = remaining.sample(1, random_state=np.random.randint(1_000_000_000))
+            # pick3は補完ではない（同じテーマ内）
         else:
-            need = 3 - len(preferred)
-            others = cand_sorted[~theme_mask_sorted]
-            picks = pd.concat([preferred, others.head(need)], ignore_index=True)
-    elif len(cand_sorted) >= 1:
-        need = 3 - len(cand_sorted)
-        # 補完候補：既に選んだものを除き、同じスコア計算を使えるように一時結合
-        rest = books.drop(cand_sorted.index, errors="ignore").copy()
-        if "keywords" in rest.columns:
-            # Recompute weighted scoring for rest, matching filter_books
-            rest["_title"] = rest["title"].astype(str).str.lower()
-            rest["_desc"]  = rest["description"].astype(str).str.lower()
-            rest["_keys"]  = rest["keywords"].astype(str).str.lower()
-            rest["mi_keys"] = rest["_keys"].apply(lambda s: _match_any_keyword(s, INTEREST_TO_KEYWORDS.get(interest, [])))
-            rest["mi_title"] = rest["_title"].apply(lambda s: _match_any_keyword(s, INTEREST_TO_KEYWORDS.get(interest, [])))
-            rest["mi_desc"] = rest["_desc"].apply(lambda s: _match_any_keyword(s, INTEREST_TO_KEYWORDS.get(interest, [])))
-            rest["mf_keys"] = rest["_keys"].apply(lambda s: _match_any_keyword(s, FEELING_TO_KEYWORDS.get(feeling, [])))
-            rest["mf_desc"] = rest["_desc"].apply(lambda s: _match_any_keyword(s, FEELING_TO_KEYWORDS.get(feeling, [])))
-            rest["mx_keys"] = rest["_keys"].apply(lambda s: _match_any_keyword(s, EXTRA_TO_KEYWORDS.get(extra, [])))
-            rest["penalty"] = rest["_keys"].apply(lambda s: _match_any_keyword(s, INTEREST_PENALTY.get(interest, [])))
-            rest["score"] = (
-                (rest["mi_keys"].astype(int) * 3)
-                + (rest["mi_title"].astype(int) * 2)
-                + (rest["mi_desc"].astype(int) * 1)
-                + (rest["mf_keys"].astype(int) * 2)
-                + (rest["mf_desc"].astype(int) * 1)
-                + (rest["mx_keys"].astype(int) * 1)
-                - (rest["penalty"].astype(int) * 1)
-            )
-            if (interest, feeling) in {
-                ("仕事・キャリア", "小さく動き出したい"),
-                ("自己理解・内省", "自分の軸を確かめたい"),
-                ("人間関係・コミュニケーション", "人間関係を整えたい"),
-                ("恋愛・パートナーシップ", "人間関係を整えたい"),
-                ("習慣・ライフスタイル", "前向きになりたい"),
-                ("習慣・ライフスタイル", "小さく動き出したい"),
-                ("死生観・人生の意味", "迷いを整理したい"),
-            }:
-                rest["score"] = rest["score"] + 1
-            rest["_rand"] = np.random.rand(len(rest))
-            rest = rest.sort_values(["score", "_rand"], ascending=[False, True])
-        picks = pd.concat([cand_sorted, rest.head(need)], ignore_index=True)
-        # Re-order picks to prefer theme matches
-        theme_regex = "|".join(INTEREST_TO_KEYWORDS.get(interest, []))
-        tmask = picks["_keys"].str.contains(theme_regex, case=False, na=False) | \
-                picks["_title"].str.contains(theme_regex, case=False, na=False)
-        if tmask.any():
-            picks = pd.concat([picks[tmask], picks[~tmask]]).head(3)
+            rest = books.drop(cand_sorted.index, errors="ignore")
+            pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+            # pick3は補完本
+            supplemented_titles.update(pick3["title"].tolist())
+        picks = pd.concat([pick1, pick2, pick3], ignore_index=True)
+    elif len(cand_sorted) == 2:
+        rest = books.drop(cand_sorted.index, errors="ignore")
+        pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+        picks = pd.concat([cand_sorted, pick3], ignore_index=True)
+        supplemented_titles.update(pick3["title"].tolist())
+    elif len(cand_sorted) == 1:
+        rest = books.drop(cand_sorted.index, errors="ignore")
+        supplement = rest.sample(2, random_state=np.random.randint(1_000_000_000))
+        picks = pd.concat([cand_sorted, supplement], ignore_index=True)
+        supplemented_titles.update(supplement["title"].tolist())
     else:
         # フォールバック：全体からランダム
-        picks = books.sample(3)
-        theme_regex = "|".join(INTEREST_TO_KEYWORDS.get(interest, []))
-        picks["_title"] = picks["title"].astype(str).str.lower()
-        picks["_keys"]  = picks["keywords"].astype(str).str.lower()
-        tmask = picks["_keys"].str.contains(theme_regex, case=False, na=False) | \
-                picks["_title"].str.contains(theme_regex, case=False, na=False)
-        if tmask.any():
-            picks = pd.concat([picks[tmask], picks[~tmask]]).head(3)
+        picks = books.sample(3, random_state=np.random.randint(1_000_000_000))
+        supplemented_titles.update(picks["title"].tolist())
 
     # 不要な_rand列を削除
     if "_rand" in picks.columns:
@@ -462,14 +785,65 @@ if st.button("📖 本をえらぶ"):
     esc_title = html.escape(str(pick["title"]))
     esc_desc = html.escape(str(pick["description"]))
     hero_link = build_amazon_link(pick['title'], guess_author_from_keywords(pick.get('keywords', '')))
-    hero_html = f"""
+    cover_html = ""
+    if SHOW_COVERS:
+        cover_url = get_cover_url(pick.get("isbn"), pick["title"], guess_author_from_keywords(pick.get("keywords", "")))
+        if cover_url:
+            cover_html = f'<img src="{html.escape(cover_url)}" alt="表紙" loading="lazy" decoding="async" />'
+        else:
+            cover_html = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
+
+    # --- 補足ラベル（補完本の場合のみ） ---
+    note_html = ""
+    if esc_title in supplemented_titles:
+        note = RELATED_THEME_LABELS.get(interest, "")
+        if note:
+            note_html = f"<div class='sub-label'>{html.escape(note)}</div>"
+
+    if cover_html:
+        hero_html = f"""
 <div class="hero-card">
-  <div class="hero-title">『{esc_title}』</div>
-  <p class="hero-desc">{esc_desc}</p>
-  <a class="link-btn" href="{hero_link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_title}を検索">📦 Amazonで見る</a>
+  <div class="card-grid">
+    <div class="card-cover">{cover_html}</div>
+    <div class="card-body">
+      <div class="hero-title">『{esc_title}』</div>
+      {note_html}
+      <p class="hero-desc">{esc_desc}</p>
+      <a class="link-btn" href="{hero_link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_title}を検索">📦 Amazonで見る</a>
+    </div>
+  </div>
 </div>
 """
-    st.markdown("<div class='section section-hero'>" + hero_html + "</div>", unsafe_allow_html=True)
+        hero_html = textwrap.dedent(hero_html).lstrip()
+    else:
+        hero_html = f"""
+<div class="hero-card">
+  <div class="card-grid">
+    <div class="card-body">
+      <div class="hero-title">『{esc_title}』</div>
+      {note_html}
+      <p class="hero-desc">{esc_desc}</p>
+      <a class="link-btn" href="{hero_link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_title}を検索">📦 Amazonで見る</a>
+    </div>
+  </div>
+</div>
+"""
+        hero_html = textwrap.dedent(hero_html).lstrip()
+    hero_full = f"""
+<html><head><meta charset='utf-8'><style>
+body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
+.hero-card,.book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
+.card-grid{{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}}
+.card-cover img{{width:100%;height:auto;max-height:200px;object-fit:contain;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;box-sizing:border-box}}
+.hero-title{{font-weight:700;margin-bottom:6px;font-size:18px;line-height:1.5}}
+.hero-desc{{margin:8px 0 12px;line-height:1.7;font-size:16px;color:#374151}}
+.link-btn{{display:inline-block;padding:8px 18px;border-radius:6px;text-decoration:none;background:#EEF2FF;color:#1D4ED8;border:1px solid #c7d2fe;font-weight:600;}}
+.card-body{{display:flex;flex-direction:column;gap:8px;justify-content:space-between}}
+.card-body .link-btn{{align-self:flex-end}}
+@media (max-width:640px){{ .card-body .link-btn{{align-self:stretch;text-align:center;width:100%}} }}
+</style></head><body>{hero_html}</body></html>
+"""
+    components.html(hero_full, height=380, scrolling=False)
 
     st.markdown("## 📖 こちらも手にとってみませんか")
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
@@ -479,12 +853,66 @@ if st.button("📖 本をえらぶ"):
         esc_t = html.escape(str(book["title"]))
         esc_d = html.escape(str(book["description"]))
         link = build_amazon_link(book['title'], guess_author_from_keywords(book.get('keywords', '')))
-        card_html = f"""
+        cover2 = ""
+        if SHOW_COVERS:
+            c2 = get_cover_url(book.get("isbn"), book["title"], guess_author_from_keywords(book.get("keywords", "")))
+            if c2:
+                cover2 = f'<img src="{html.escape(c2)}" alt="表紙" loading="lazy" decoding="async" />'
+            else:
+                cover2 = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
+
+        # --- 補足ラベル（補完本の場合のみ） ---
+        note_html = ""
+        if esc_t in supplemented_titles:
+            note = RELATED_THEME_LABELS.get(interest, "")
+            if note:
+                note_html = f"<div class='sub-label'>{html.escape(note)}</div>"
+
+        if cover2:
+            card_html = f"""
 <div class="book-card">
-  <div class="book-title">『{esc_t}』</div>
-  <p class="book-desc">{esc_d}</p>
-  <a class="link-btn" href="{link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_t}を検索">📦 Amazonで見る</a>
+  <div class="card-grid">
+    <div class="card-cover">{cover2}</div>
+    <div class="card-body">
+      <div class="book-title">『{esc_t}』</div>
+      {note_html}
+      <p class="book-desc">{esc_d}</p>
+      <a class="link-btn" href="{link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_t}を検索">📦 Amazonで見る</a>
+    </div>
+  </div>
 </div>
 """
+            card_html = textwrap.dedent(card_html).lstrip()
+        else:
+            card_html = f"""
+<div class="book-card">
+  <div class="card-grid">
+    <div class="card-body">
+      <div class="book-title">『{esc_t}』</div>
+      {note_html}
+      <p class="book-desc">{esc_d}</p>
+      <a class="link-btn" href="{link}" target="_blank" rel="noopener" aria-label="Amazonで{esc_t}を検索">📦 Amazonで見る</a>
+    </div>
+  </div>
+</div>
+"""
+            card_html = textwrap.dedent(card_html).lstrip()
         cards_html.append(card_html)
-    st.markdown("<div class='section section-others'><div class='book-grid'>" + "".join(cards_html) + "</div></div>", unsafe_allow_html=True)
+    grid_full = f"""
+<html><head><meta charset='utf-8'><style>
+body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
+.book-grid{{display:grid;gap:16px;}}
+@media (min-width:768px){{ .book-grid{{grid-template-columns:1fr 1fr;}} }}
+.book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
+.card-grid{{display:grid;grid-template-columns:140px 1fr;gap:16px;align-items:start}}
+.card-cover img{{width:100%;height:auto;max-height:200px;object-fit:contain;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;box-sizing:border-box}}
+.book-title{{font-weight:700;margin-bottom:6px;font-size:17px;line-height:1.5}}
+.book-desc{{margin:8px 0 12px;line-height:1.7;font-size:15px;color:#374151}}
+.link-btn{{display:inline-block;padding:8px 18px;border-radius:6px;text-decoration:none;background:#EEF2FF;color:#1D4ED8;border:1px solid #c7d2fe;font-weight:600;}}
+.sub-label{{ font-size: 14px; color:#6b7280; margin:4px 0 6px; font-style: italic; }}
+.card-body{{display:flex;flex-direction:column;gap:8px;justify-content:space-between}}
+.card-body .link-btn{{align-self:flex-end}}
+@media (max-width:640px){{ .card-body .link-btn{{align-self:stretch;text-align:center;width:100%}} }}
+</style></head><body><div class='book-grid'>{"".join(cards_html)}</div></body></html>
+"""
+    components.html(grid_full, height=900, scrolling=True)
