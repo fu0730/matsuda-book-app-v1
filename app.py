@@ -9,6 +9,7 @@ import io
 import re
 import difflib
 import textwrap
+import unicodedata
 import xml.etree.ElementTree as ET
 import streamlit.components.v1 as components
 
@@ -319,7 +320,8 @@ def load_books() -> pd.DataFrame:
         if col not in df.columns:
             df[col] = ""
     # 前後空白の除去
-    for col in ["title", "description", "amazon_url", "keywords"]:
+    # ISBN 列も文字列化してからトリムする（数値として読み込まれることがあるため）
+    for col in ["title", "description", "amazon_url", "keywords", "isbn"]:
         df[col] = df[col].astype(str).str.strip()
     # 重複排除（タイトルで一意に）
     if "title" in df.columns:
@@ -353,13 +355,22 @@ def needs_placeholder(title: str) -> bool:
 
 # 任意: タイトル→ISBN の手動オーバーライド（必要に応じて追記）
 ISBN_OVERRIDE: dict[str, str] = {
-    # "朝1分30の習慣": "",  # 例: "978429..."
-    # "愛と怖れの法則": "",
-    # "子どもの「考える力」が伸びる魔法の質問": "",
+    # 確認済みのISBN（OpenBDで表紙が返る）
+    "起きてから寝るまでの魔法の質問": "9784763130998",
+    "しあわせをつくる 自分探しの授業（ビジネスマンの学校）": "9784479791773",
+    # 例: 必要に応じて追記
+    # "こころのエンジンに火をつける 魔法の質問": "<ISBN13>",
 }
 
 # --- v2: 表紙画像の表示ON/OFF ---
+
+# --- v2: 表紙画像の表示ON/OFF ---
 SHOW_COVERS: bool = True
+INLINE_COVERS: bool = True  # return images as data URI to avoid hotlink restrictions
+
+# Feature toggles for Google Books usage
+USE_GB_SEARCH: bool = True         # use Google Books API to find ISBN when NDL fails
+USE_GB_IMAGE_SEARCH: bool = False   # use Google Books imageLinks (title search) for covers
 
 
 @st.cache_data(ttl=24*60*60)
@@ -368,6 +379,135 @@ def find_isbn(title: str, author: str | None = None) -> str | None:
     Returns a 13-digit string or None.
     """
     if not title:
+        return None
+
+    def _clean(s: str) -> str:
+        s = s or ""
+        # Unicode normalize (NFKC) to reduce width/variant differences
+        s = unicodedata.normalize("NFKC", s)
+        # remove bracketed notes entirely (e.g., （正式タイトル：…）)
+        s = re.sub(r"（.*?）", " ", s)
+        s = re.sub(r"\(.*?\)", " ", s)
+        s = s.strip()
+        # remove Japanese quotes/parentheses and extra spaces
+        s = re.sub(r"[『』「」（）()\[\]【】]", " ", s)
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def _digits13(s: str) -> str | None:
+        digits = re.sub(r"[^0-9]", "", s or "")
+        return digits if len(digits) == 13 else None
+
+    q_title = _clean(str(title))
+    # additional: drop suffix after common separators
+    for sep in ["：", ":", " - ", "—", "–", "—", "―", "〜", "、"]:
+        if sep in q_title:
+            q_title = _clean(q_title.split(sep)[0])
+            break
+    q_author = _clean(str(author)) if author else None
+
+    # --- 1) NDL SRU ---
+    try:
+        base = "https://iss.ndl.go.jp/api/sru"
+        # try multiple title variants (remove subtitles)
+        title_variants = [q_title]
+        for sep in ["：", ":", " - ", "—", "(", "（"]:
+            if sep in q_title:
+                title_variants.append(_clean(q_title.split(sep)[0]))
+        title_variants = list(dict.fromkeys([t for t in title_variants if t]))
+        # try author variants (including common aliases) and None
+        author_variants = [q_author] if q_author else []
+        author_variants += ["マツダミヒロ", "マツダ ミヒロ", "松田充弘", "松田 充弘", "松田　充弘", "WAKANA", None]
+        seen_pairs = set()
+        for t in title_variants:
+            for a in author_variants:
+                key = (t, a or "")
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                # Try a sequence of CQL queries from strict to fuzzy
+                cql_list = []
+                if a:
+                    cql_list.append(f'title="{t}" AND creator="{a}"')
+                    cql_list.append(f'title any "{t}" AND creator any "{a}"')
+                    cql_list.append(f'title any "{t}"')
+                else:
+                    cql_list.append(f'title="{t}"')
+                    cql_list.append(f'title any "{t}"')
+                hit = None
+                for cql in cql_list:
+                    params = {"operation": "searchRetrieve", "maximumRecords": "5", "query": cql}
+                    r = requests.get(base, params=params, timeout=8)
+                    if not (r.ok and r.text):
+                        continue
+                    root = ET.fromstring(r.text)
+                    ns = {"srw": "http://www.loc.gov/zing/srw/", "dc": "http://purl.org/dc/elements/1.1/"}
+                    for rec in root.findall(".//srw:record", ns):
+                        idents = rec.findall(".//dc:identifier", ns)
+                        cand = None
+                        for el in idents:
+                            cand = _digits13(el.text or "")
+                            if cand:
+                                break
+                        if not cand:
+                            continue
+                        dctitle = rec.find(".//dc:title", ns)
+                        if dctitle is not None and dctitle.text:
+                            got = _clean(dctitle.text).lower()
+                            want = t.lower()
+                            ratio = difflib.SequenceMatcher(None, want, got).ratio()
+                            if ratio >= 0.55:
+                                hit = cand
+                                break
+                    if hit:
+                        return hit
+    except Exception:
+        pass
+
+    # --- 2) Google Books API (optional key) ---
+    try:
+        gb_key = st.secrets.get("google_books_api_key")
+        if not (USE_GB_SEARCH or gb_key):
+            raise Exception("GB search disabled")
+        q = f'intitle:"{q_title}"'
+        if q_author:
+            q += f' inauthor:"{q_author}"'
+        gparams = {"q": q, "maxResults": 5, "printType": "books", "langRestrict": "ja"}
+        if gb_key:
+            gparams["key"] = gb_key
+        r2 = requests.get("https://www.googleapis.com/books/v1/volumes", params=gparams, timeout=8)
+        if r2.ok:
+            data = r2.json()
+            for it in data.get("items", []) or []:
+                vi = it.get("volumeInfo", {})
+                got = _clean(vi.get("title", "")).lower()
+                want = q_title.lower()
+                ratio = difflib.SequenceMatcher(None, want, got).ratio()
+                if not (got and ratio >= 0.55):
+                    continue
+                for ident in vi.get("industryIdentifiers", []) or []:
+                    if ident.get("type") == "ISBN_13":
+                        cand = _digits13(ident.get("identifier"))
+                        if cand:
+                            return cand
+    except Exception:
+        pass
+
+    return None
+
+def _to_data_uri(url: str, headers: dict | None = None, timeout: int = 8) -> str | None:
+    try:
+        h = headers or {"User-Agent": "Mozilla/5.0 (compatible; matsuda-book-app/2.0)"}
+        r = requests.get(url, headers=h, timeout=timeout)
+        if not r.ok:
+            return None
+        ctype = r.headers.get("Content-Type", "")
+        if not ctype.startswith("image/"):
+            return None
+        import base64
+        b64 = base64.b64encode(r.content).decode("ascii")
+        return f"data:{ctype};base64,{b64}"
+    except Exception:
         return None
 
     def _clean(s: str) -> str:
@@ -433,6 +573,8 @@ def find_isbn(title: str, author: str | None = None) -> str | None:
     # --- 2) Google Books API (optional key) ---
     try:
         gb_key = st.secrets.get("google_books_api_key")
+        if not (USE_GB_SEARCH or gb_key):
+            raise Exception("GB search disabled")
         q = f'intitle:"{q_title}"'
         if q_author:
             q += f' inauthor:"{q_author}"'
@@ -478,6 +620,12 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
             ob = f"https://api.openbd.jp/v1/cover/{ISBN_OVERRIDE[title]}.jpg"
             r = requests.get(ob, timeout=6)
             if r.status_code == 200 and (r.headers.get("Content-Type", "").startswith("image/") or r.content[:2] == b"\xff\xd8"):
+                inline = INLINE_COVERS
+                if inline:
+                    du = _to_data_uri(ob, None)
+                    if du:
+                        return du
+                    return None
                 return ob
         except Exception:
             pass
@@ -519,6 +667,7 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
         table = str.maketrans({ch: "" for ch in remove_chars})
         return s.translate(table)
 
+    inline = INLINE_COVERS
     # 1) OpenBD（ISBNがあれば高確度）
     try:
         clean_isbn = None
@@ -531,6 +680,11 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
             if r.status_code == 200 and (
                 r.headers.get("Content-Type", "").startswith("image/") or r.content[:2] == b"\xff\xd8"
             ):
+                if inline:
+                    du = _to_data_uri(ob, headers)
+                    if du:
+                        return du
+                    return None
                 return ob
         # If we still don't have an ISBN, try to find one by title/author
         if not clean_isbn:
@@ -542,6 +696,11 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
                     ob2 = f"https://api.openbd.jp/v1/cover/{clean_isbn}.jpg"
                     r_ob2 = requests.get(ob2, headers=headers, timeout=6)
                     if r_ob2.status_code == 200 and (r_ob2.headers.get("Content-Type", "").startswith("image/") or r_ob2.content[:2] == b"\xff\xd8"):
+                        if inline:
+                            du = _to_data_uri(ob2, headers)
+                            if du:
+                                return du
+                            return None
                         return ob2
             except Exception:
                 pass
@@ -555,11 +714,18 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
             r2 = requests.get(gb_isbn, headers=headers, timeout=6)
             # Some responses may return 200 with an image; accept content-type image/*
             if r2.status_code == 200 and (r2.headers.get("Content-Type", "").startswith("image/")):
+                if inline:
+                    du = _to_data_uri(gb_isbn, headers)
+                    if du:
+                        return du
+                    return None
                 return gb_isbn
     except Exception:
         pass
 
     # 2) Google Books（タイトル検索フォールバック）
+    if not USE_GB_IMAGE_SEARCH:
+        return None
     GB_URL = "https://www.googleapis.com/books/v1/volumes"
     # タイトル補正
     query_title = TITLE_OVERRIDE.get(title, title)
@@ -616,21 +782,37 @@ def get_cover_url(isbn: str | None, title: str, author: str | None = None) -> st
                     links = info.get("imageLinks") or {}
                     url = links.get("thumbnail") or links.get("smallThumbnail")
                     if url:
-                        return url.replace("http://", "https://")
+                        final = url.replace("http://", "https://")
+                        if inline:
+                            du = _to_data_uri(final, headers)
+                            if du:
+                                return du
+                            return None
+                        return final
 
                 # フォールバック：タイトル強一致のみ（類似度が十分高い場合は著者不一致でも採用）
                 if ratio >= 0.72:
                     links = info.get("imageLinks") or {}
                     url = links.get("thumbnail") or links.get("smallThumbnail")
                     if url:
-                        return url.replace("http://", "https://")
+                        final = url.replace("http://", "https://")
+                        if inline:
+                            du = _to_data_uri(final, headers)
+                            if du:
+                                return du
+                            return None
+                        return final
         except Exception:
             continue
 
     return None
 
 # フォーム（テーマ:全幅, 気持ち/読み方:2カラム横並び）
+
 st.title("📘 今日のあなたに、そっとよりそう本を探しましょう")
+# Keep results visible across reruns (e.g., when toggling debug checkbox)
+if "show_results" not in st.session_state:
+    st.session_state["show_results"] = False
 
 
 # テーマ選択（全幅）
@@ -681,7 +863,8 @@ with col2:
 
 
 # 実行ボタン（フォームカード下・左寄せ）
-go = st.button("📖 本をえらぶ")
+if st.button("📖 本をえらぶ"):
+    st.session_state["show_results"] = True
 st.markdown("<div style='margin: 20px 0;'></div>", unsafe_allow_html=True)
 st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 
@@ -850,7 +1033,12 @@ def filter_books(df: pd.DataFrame, interest_choice: str, feeling_choice: str, ex
         # それでも足りなければ全体
         return df
 
-if 'go' in locals() and go:
+if st.session_state.get("show_results"):
+    cols_reset = st.columns([1, 0.25])
+    with cols_reset[1]:
+        if st.button("条件を変えて探す", key="reset_search"):
+            st.session_state["show_results"] = False
+            st.rerun()
     candidates = filter_books(books, interest, feeling, extra)
 
     if len(candidates) == 0:
@@ -906,6 +1094,29 @@ if 'go' in locals() and go:
     if 'rest' in locals() and "_rand" in rest.columns:
         rest = rest.drop(columns=["_rand"])
 
+    # Debug: show how ISBN was resolved (optional)
+    debug = st.checkbox("デバッグ: 表紙取得の内訳を表示する", value=False)
+    debug_rows = []
+    if debug:
+        for _, b in picks.iterrows():
+            title_dbg = str(b.get("title", ""))
+            author_dbg = guess_author_from_keywords(b.get("keywords", ""))
+            # prefer valid 13-digit from sheet; otherwise try finder
+            raw_sheet_isbn = str(b.get("isbn", "")).strip()
+            sheet_digits = re.sub(r"[^0-9]", "", raw_sheet_isbn)
+            isbn_dbg = sheet_digits if len(sheet_digits) == 13 else find_isbn(title_dbg, author_dbg)
+            # OpenBD URL only when we have 13-digit
+            ob_url = f"https://api.openbd.jp/v1/cover/{isbn_dbg}.jpg" if isbn_dbg else ""
+            status = ""
+            if isbn_dbg:
+                try:
+                    rtest = requests.get(ob_url, timeout=6)
+                    status = f"{rtest.status_code} {rtest.headers.get('Content-Type','')}"
+                except Exception:
+                    status = "error"
+            debug_rows.append({"title": title_dbg, "author_guess": author_dbg, "isbn": isbn_dbg or "", "openbd": ob_url if isbn_dbg else "", "status": status})
+        st.write(pd.DataFrame(debug_rows))
+
     # st.success("おすすめの本はこちらです！")
     st.markdown("## 🌟 特におすすめの1冊")
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
@@ -919,7 +1130,7 @@ if 'go' in locals() and go:
     if SHOW_COVERS:
         cover_url = get_cover_url(pick.get("isbn"), pick["title"], guess_author_from_keywords(pick.get("keywords", "")))
         if cover_url:
-            cover_html = f'<img src="{html.escape(cover_url)}" alt="表紙" loading="lazy" decoding="async" />'
+            cover_html = f'<img src="{html.escape(cover_url)}" alt="表紙" loading="lazy" decoding="async" referrerpolicy="no-referrer" />'
         else:
             cover_html = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
 
@@ -975,6 +1186,9 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 """
     components.html(hero_full, height=380, scrolling=False)
 
+    # with st.expander("debug: cover src", expanded=False):
+    #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
+
     st.markdown("## 📖 こちらも手にとってみませんか")
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
     # 次点の2冊（グリッドで横並び／スマホは縦）
@@ -987,7 +1201,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
         if SHOW_COVERS:
             c2 = get_cover_url(book.get("isbn"), book["title"], guess_author_from_keywords(book.get("keywords", "")))
             if c2:
-                cover2 = f'<img src="{html.escape(c2)}" alt="表紙" loading="lazy" decoding="async" />'
+                cover2 = f'<img src="{html.escape(c2)}" alt="表紙" loading="lazy" decoding="async" referrerpolicy="no-referrer" />'
             else:
                 cover2 = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
 
