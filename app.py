@@ -83,7 +83,8 @@ st.markdown(
       .stButton>button { width: 100%; }
       .stRadio, .stSelectbox { font-size: 0.98rem; }
       .stMarkdown p { font-size: 1.08rem; line-height: 1.7; }
-      .main .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+      .main .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
+      .hero-card, .book-card { padding: 12px 12px; }
     }
 
     /* Cards & grid for desktop/mobile */
@@ -1153,7 +1154,7 @@ if st.session_state.get("show_results"):
 <style>
 body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
 .hero-card,.book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
-.card-grid{{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}}
+.card-grid{{display:grid;grid-template-columns:170px 1fr;gap:12px;align-items:start}}
 .card-cover img{{width:100%;height:auto;max-height:200px;object-fit:contain;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;box-sizing:border-box}}
 .hero-title{{font-weight:700;margin-bottom:6px;font-size:18px;line-height:1.5}}
 .hero-desc{{margin:8px 0 12px;line-height:1.7;font-size:16px;color:#374151}}
@@ -1234,7 +1235,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 .book-grid{{display:grid;gap:16px;}}
 @media (min-width:768px){{ .book-grid{{grid-template-columns:1fr 1fr;}} }}
 .book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
-.card-grid{{display:grid;grid-template-columns:140px 1fr;gap:16px;align-items:start}}
+.card-grid{{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:start}}
 .card-cover img{{width:100%;height:auto;max-height:200px;object-fit:contain;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;box-sizing:border-box}}
 .book-title{{font-weight:700;margin-bottom:6px;font-size:17px;line-height:1.5}}
 .book-desc{{margin:8px 0 12px;line-height:1.7;font-size:15px;color:#374151}}
