@@ -75,7 +75,7 @@ st.markdown(
 
     /* Make the main content column comfortably narrow on large screens */
     @media (min-width: 1024px) {
-      .main .block-container { max-width: 900px; }
+      .main .block-container { max-width: 780px; }
     }
 
     /* Mobile tweaks */
