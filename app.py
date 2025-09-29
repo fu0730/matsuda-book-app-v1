@@ -1194,7 +1194,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 </script>
 """
     # --- PC/モバイル両対応: 説明文の長さから高さを多めに見積もり、縦並びスマホでも切れないようにする
-    st.markdown(hero_full, unsafe_allow_html=True)
+    components.html(hero_full, height=800, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
