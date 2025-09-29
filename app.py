@@ -1159,10 +1159,16 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 .link-btn{{display:inline-block;padding:8px 18px;border-radius:6px;text-decoration:none;background:#EEF2FF;color:#1D4ED8;border:1px solid #c7d2fe;font-weight:600;}}
 .card-body{{display:flex;flex-direction:column;gap:8px;justify-content:space-between}}
 .card-body .link-btn{{align-self:flex-end}}
-@media (max-width:640px){{ .card-body .link-btn{{align-self:stretch;text-align:center;width:100%}} }}
+@media (max-width:640px){{
+  .card-grid{{grid-template-columns:1fr; gap:12px;}}
+  .card-cover img{{max-height:260px; margin:0 auto;}}
+  .hero-title{{text-align:center;}}
+  .hero-desc{{font-size:15px; line-height:1.7;}}
+  .card-body .link-btn{{align-self:stretch; text-align:center; width:100%;}}
+}}
 </style></head><body>{hero_html}</body></html>
 """
-    components.html(hero_full, height=380, scrolling=False)
+    components.html(hero_full, height=520, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
@@ -1234,7 +1240,13 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 .sub-label{{ font-size: 14px; color:#6b7280; margin:4px 0 6px; font-style: italic; }}
 .card-body{{display:flex;flex-direction:column;gap:8px;justify-content:space-between}}
 .card-body .link-btn{{align-self:flex-end}}
-@media (max-width:640px){{ .card-body .link-btn{{align-self:stretch;text-align:center;width:100%}} }}
+@media (max-width:640px){{
+  .card-grid{{grid-template-columns:1fr; gap:12px;}}
+  .card-cover img{{max-height:220px; margin:0 auto;}}
+  .book-title{{text-align:center;}}
+  .book-desc{{font-size:14px; line-height:1.7;}}
+  .card-body .link-btn{{align-self:stretch; text-align:center; width:100%;}}
+}}
 </style></head><body><div class='book-grid'>{"".join(cards_html)}</div></body></html>
 """
     components.html(grid_full, height=900, scrolling=True)
