@@ -1169,7 +1169,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 </style>
 {hero_html}
 """
-    st.markdown(hero_full, unsafe_allow_html=True)
+    components.html(hero_full, height=520, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
@@ -1251,4 +1251,4 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 </style>
 <div class='book-grid'>{"".join(cards_html)}</div>
 """
-    st.markdown(grid_full, unsafe_allow_html=True)
+    components.html(grid_full, height=1200, scrolling=False)
