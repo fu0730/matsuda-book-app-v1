@@ -1188,7 +1188,12 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   }})();
 </script>
 """
-    components.html(hero_full, height=700, scrolling=False)
+    # --- PCの余白対策: 説明文の長さから高さを概算してiframe高さを自動調整（上限700/下限360）
+    _desc_len = len(str(pick.get("description", "")))
+    # 横並び(PC)は行数が少ないため係数は控えめに、縦並び(スマホ)でも上限でカバー
+    _estimated = 320 + int(_desc_len * 0.18)
+    hero_height = max(360, min(700, _estimated))
+    components.html(hero_full, height=hero_height, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
