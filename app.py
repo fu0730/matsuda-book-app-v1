@@ -171,8 +171,15 @@ st.markdown(
       .link-btn:hover { background: #1c222b; }
     }
 
-    /* Section spacing */
-    .section { margin: 24px 0; }
+    /* Section spacing (responsive, tighter) */
+    .section { margin: 20px 0; }
+    .section-hero { margin-bottom: 20px; }
+    .section-others { margin-top: 12px; }
+    @media (max-width: 640px){
+      .section { margin: 16px 0; }
+      .section-hero { margin-bottom: 14px; }
+      .section-others { margin-top: 10px; }
+    }
 
     /* Improve label wrapping & readability */
     .stSelectbox label, .stRadio label {
@@ -233,9 +240,7 @@ st.markdown(
     }
 
     /* Sections / dividers */
-    .section { margin: 24px 0; }
-    .section-hero { margin-bottom: 28px; }
-    .section-others { margin-top: 14px; }
+    /* Section spacing handled above */
     .divider { height: 1px; background: var(--brand-border); margin: 14px 0; }
 
     /* 本文や説明は大きく温かく */
@@ -1191,9 +1196,9 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
     # --- PC/モバイル両対応: 説明文の長さから高さを多めに見積もり、縦並びスマホでも切れないようにする
     _desc_len = len(str(pick.get("description", "")))
     # モバイルの縦並びで画像+長文でも切れないように多めに見積もる
-    _estimated = 360 + int(_desc_len * 0.32)
-    # 下限を広め(820)・上限も拡張(1000)。PCではiframe内のスクリプトで自動縮小される
-    hero_height = max(820, min(1000, _estimated))
+    _estimated = 340 + int(_desc_len * 0.30)
+    # 下限をやや縮め(760)・上限も縮め(940)。PCではiframe内のスクリプトで自動縮小される
+    hero_height = max(760, min(940, _estimated))
     components.html(hero_full, height=hero_height, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
