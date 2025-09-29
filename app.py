@@ -277,6 +277,48 @@ st.markdown(
 )
 
 # データ読み込み（キャッシュつき & フォールバック）
+def get_fallback_books() -> pd.DataFrame:
+    """フォールバック用のサンプル書籍データを返す"""
+    fallback_data = [
+        {
+            "title": "アンガーマネジメント",
+            "description": "怒りの感情との上手な付き合い方を学び、人間関係を改善するための実践的ガイド。",
+            "amazon_url": "https://amazon.co.jp/s?k=アンガーマネジメント",
+            "keywords": "感情管理,人間関係,自己成長,メンタルヘルス"
+        },
+        {
+            "title": "7つの習慣",
+            "description": "効果的な人生と仕事のための原則を学ぶ、世界的ベストセラー。",
+            "amazon_url": "https://amazon.co.jp/s?k=7つの習慣",
+            "keywords": "自己啓発,成功法則,習慣,リーダーシップ"
+        },
+        {
+            "title": "マインドフルネス入門",
+            "description": "今この瞬間を大切にし、心の平穏を得るためのマインドフルネス実践法。",
+            "amazon_url": "https://amazon.co.jp/s?k=マインドフルネス",
+            "keywords": "瞑想,メンタルヘルス,ストレス解消,自己理解"
+        },
+        {
+            "title": "人を動かす",
+            "description": "人とのコミュニケーションを改善し、良い人間関係を築くための名著。",
+            "amazon_url": "https://amazon.co.jp/s?k=人を動かす",
+            "keywords": "コミュニケーション,人間関係,リーダーシップ,影響力"
+        },
+        {
+            "title": "嫌われる勇気",
+            "description": "アドラー心理学に基づく、自分らしく生きるための勇気を得る一冊。",
+            "amazon_url": "https://amazon.co.jp/s?k=嫌われる勇気",
+            "keywords": "心理学,自己受容,人生哲学,勇気"
+        }
+    ]
+    
+    df = pd.DataFrame(fallback_data)
+    # 欠損カラムの安全対策
+    for col in ["isbn"]:
+        if col not in df.columns:
+            df[col] = ""
+    return df
+
 @st.cache_data(show_spinner=False, ttl=60 * 10)
 def load_books() -> pd.DataFrame:
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRrOkycGi4nVcR_f2HES6pkm4Yz8BiwFr2L9t3Zf0_j0c_eRy0g2pM9cxZj6fRfsUM20urikULvOqub/pub?output=csv"
@@ -295,8 +337,8 @@ def load_books() -> pd.DataFrame:
         except Exception:
             pass
     if text is None:
-        st.error("データの取得に失敗しました。時間をおいて再度お試しください。")
-        return pd.DataFrame(columns=["title", "description", "amazon_url", "keywords"])  # safe empty
+        st.error("データの取得に失敗しました。フォールバック書籍データを使用します。")
+        return get_fallback_books()
 
     df = pd.read_csv(io.StringIO(text))
     # 標準化
@@ -851,6 +893,11 @@ def filter_books(df: pd.DataFrame, interest_choice: str, feeling_choice: str, ex
         return df
 
 if 'go' in locals() and go:
+    # 安全性チェック：書籍データが空でないことを確認
+    if len(books) == 0:
+        st.error("書籍データが利用できません。しばらく経ってから再度お試しください。")
+        st.stop()
+    
     candidates = filter_books(books, interest, feeling, extra)
 
     if len(candidates) == 0:
@@ -879,23 +926,41 @@ if 'go' in locals() and go:
             # pick3は補完ではない（同じテーマ内）
         else:
             rest = books.drop(cand_sorted.index, errors="ignore")
-            pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+            if len(rest) > 0:
+                pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+            else:
+                # 万が一残りがない場合は全体から取得
+                pick3 = books.sample(1, random_state=np.random.randint(1_000_000_000))
             # pick3は補完本
             supplemented_titles.update(pick3["title"].tolist())
         picks = pd.concat([pick1, pick2, pick3], ignore_index=True)
     elif len(cand_sorted) == 2:
         rest = books.drop(cand_sorted.index, errors="ignore")
-        pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+        if len(rest) > 0:
+            pick3 = rest.sample(1, random_state=np.random.randint(1_000_000_000))
+        else:
+            # 万が一残りがない場合は全体から取得
+            pick3 = books.sample(1, random_state=np.random.randint(1_000_000_000))
         picks = pd.concat([cand_sorted, pick3], ignore_index=True)
         supplemented_titles.update(pick3["title"].tolist())
     elif len(cand_sorted) == 1:
         rest = books.drop(cand_sorted.index, errors="ignore")
-        supplement = rest.sample(2, random_state=np.random.randint(1_000_000_000))
+        if len(rest) >= 2:
+            supplement = rest.sample(2, random_state=np.random.randint(1_000_000_000))
+        elif len(rest) == 1:
+            supplement = rest
+        else:
+            # 万が一残りがない場合は全体から取得
+            supplement = books.sample(2, random_state=np.random.randint(1_000_000_000))
         picks = pd.concat([cand_sorted, supplement], ignore_index=True)
         supplemented_titles.update(supplement["title"].tolist())
     else:
         # フォールバック：全体からランダム
-        picks = books.sample(3, random_state=np.random.randint(1_000_000_000))
+        if len(books) >= 3:
+            picks = books.sample(3, random_state=np.random.randint(1_000_000_000))
+        else:
+            # 書籍数が3未満の場合はすべて選択
+            picks = books.copy()
         supplemented_titles.update(picks["title"].tolist())
 
     # 不要な_rand列を削除
@@ -905,6 +970,11 @@ if 'go' in locals() and go:
         candidates = candidates.drop(columns=["_rand"])
     if 'rest' in locals() and "_rand" in rest.columns:
         rest = rest.drop(columns=["_rand"])
+
+    # 最終的な安全性チェック：picksが空でないことを確認
+    if len(picks) == 0:
+        st.error("おすすめ本の選択に失敗しました。しばらく経ってから再度お試しください。")
+        st.stop()
 
     # st.success("おすすめの本はこちらです！")
     st.markdown("## 🌟 特におすすめの1冊")
@@ -977,29 +1047,34 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 
     st.markdown("## 📖 こちらも手にとってみませんか")
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-    # 次点の2冊（グリッドで横並び／スマホは縦）
-    cards_html = []
-    for _, book in picks.iloc[1:].iterrows():
-        esc_t = html.escape(str(book["title"]))
-        esc_d = html.escape(str(book["description"]))
-        link = build_amazon_link(book['title'], guess_author_from_keywords(book.get('keywords', '')))
-        cover2 = ""
-        if SHOW_COVERS:
-            c2 = get_cover_url(book.get("isbn"), book["title"], guess_author_from_keywords(book.get("keywords", "")))
-            if c2:
-                cover2 = f'<img src="{html.escape(c2)}" alt="表紙" loading="lazy" decoding="async" />'
-            else:
-                cover2 = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
+    
+    # 安全性チェック：有効なpicksが存在し、少なくとも2冊以上あることを確認
+    if len(picks) <= 1:
+        st.info("現在、追加のおすすめ本がありません。")
+    else:
+        # 次点の2冊（グリッドで横並び／スマホは縦）
+        cards_html = []
+        for _, book in picks.iloc[1:].iterrows():
+            esc_t = html.escape(str(book["title"]))
+            esc_d = html.escape(str(book["description"]))
+            link = build_amazon_link(book['title'], guess_author_from_keywords(book.get('keywords', '')))
+            cover2 = ""
+            if SHOW_COVERS:
+                c2 = get_cover_url(book.get("isbn"), book["title"], guess_author_from_keywords(book.get("keywords", "")))
+                if c2:
+                    cover2 = f'<img src="{html.escape(c2)}" alt="表紙" loading="lazy" decoding="async" />'
+                else:
+                    cover2 = f'<img src="{NO_COVER_IMG}" alt="表紙画像が見つかりませんでした" />'
 
-        # --- 補足ラベル（補完本の場合のみ） ---
-        note_html = ""
-        if esc_t in supplemented_titles:
-            note = RELATED_THEME_LABELS.get(interest, "")
-            if note:
-                note_html = f"<div class='sub-label'>{html.escape(note)}</div>"
+            # --- 補足ラベル（補完本の場合のみ） ---
+            note_html = ""
+            if esc_t in supplemented_titles:
+                note = RELATED_THEME_LABELS.get(interest, "")
+                if note:
+                    note_html = f"<div class='sub-label'>{html.escape(note)}</div>"
 
-        if cover2:
-            card_html = f"""
+            if cover2:
+                card_html = f"""
 <div class="book-card">
   <div class="card-grid">
     <div class="card-cover">{cover2}</div>
@@ -1012,9 +1087,9 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   </div>
 </div>
 """
-            card_html = textwrap.dedent(card_html).lstrip()
-        else:
-            card_html = f"""
+                card_html = textwrap.dedent(card_html).lstrip()
+            else:
+                card_html = f"""
 <div class="book-card">
   <div class="card-grid">
     <div class="card-body">
@@ -1026,9 +1101,12 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   </div>
 </div>
 """
-            card_html = textwrap.dedent(card_html).lstrip()
-        cards_html.append(card_html)
-    grid_full = f"""
+                card_html = textwrap.dedent(card_html).lstrip()
+            cards_html.append(card_html)
+        
+        # 有効なカードが存在する場合のみcomponents.htmlを呼び出す
+        if cards_html:
+            grid_full = f"""
 <html><head><meta charset='utf-8'><style>
 body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
 .book-grid{{display:grid;gap:16px;}}
@@ -1045,4 +1123,4 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 @media (max-width:640px){{ .card-body .link-btn{{align-self:stretch;text-align:center;width:100%}} }}
 </style></head><body><div class='book-grid'>{"".join(cards_html)}</div></body></html>
 """
-    components.html(grid_full, height=900, scrolling=True)
+            components.html(grid_full, height=900, scrolling=True)
