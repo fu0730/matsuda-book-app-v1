@@ -1149,7 +1149,7 @@ if st.session_state.get("show_results"):
 """
         hero_html = textwrap.dedent(hero_html).lstrip()
     hero_full = f"""
-<html><head><meta charset='utf-8'><style>
+<style>
 body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
 .hero-card,.book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
 .card-grid{{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}}
@@ -1166,9 +1166,10 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   .hero-desc{{font-size:15px; line-height:1.7;}}
   .card-body .link-btn{{align-self:stretch; text-align:center; width:100%;}}
 }}
-</style></head><body>{hero_html}</body></html>
+</style>
+{hero_html}
 """
-    components.html(hero_full, height=520, scrolling=False)
+    st.markdown(hero_full, unsafe_allow_html=True)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
@@ -1227,7 +1228,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
             card_html = textwrap.dedent(card_html).lstrip()
         cards_html.append(card_html)
     grid_full = f"""
-<html><head><meta charset='utf-8'><style>
+<style>
 body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
 .book-grid{{display:grid;gap:16px;}}
 @media (min-width:768px){{ .book-grid{{grid-template-columns:1fr 1fr;}} }}
@@ -1247,6 +1248,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   .book-desc{{font-size:14px; line-height:1.7;}}
   .card-body .link-btn{{align-self:stretch; text-align:center; width:100%;}}
 }}
-</style></head><body><div class='book-grid'>{"".join(cards_html)}</div></body></html>
+</style>
+<div class='book-grid'>{"".join(cards_html)}</div>
 """
-    components.html(grid_full, height=900, scrolling=True)
+    st.markdown(grid_full, unsafe_allow_html=True)
