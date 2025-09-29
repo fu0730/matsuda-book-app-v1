@@ -1094,28 +1094,6 @@ if st.session_state.get("show_results"):
     if 'rest' in locals() and "_rand" in rest.columns:
         rest = rest.drop(columns=["_rand"])
 
-    # Debug: show how ISBN was resolved (optional)
-    debug = st.checkbox("デバッグ: 表紙取得の内訳を表示する", value=False)
-    debug_rows = []
-    if debug:
-        for _, b in picks.iterrows():
-            title_dbg = str(b.get("title", ""))
-            author_dbg = guess_author_from_keywords(b.get("keywords", ""))
-            # prefer valid 13-digit from sheet; otherwise try finder
-            raw_sheet_isbn = str(b.get("isbn", "")).strip()
-            sheet_digits = re.sub(r"[^0-9]", "", raw_sheet_isbn)
-            isbn_dbg = sheet_digits if len(sheet_digits) == 13 else find_isbn(title_dbg, author_dbg)
-            # OpenBD URL only when we have 13-digit
-            ob_url = f"https://api.openbd.jp/v1/cover/{isbn_dbg}.jpg" if isbn_dbg else ""
-            status = ""
-            if isbn_dbg:
-                try:
-                    rtest = requests.get(ob_url, timeout=6)
-                    status = f"{rtest.status_code} {rtest.headers.get('Content-Type','')}"
-                except Exception:
-                    status = "error"
-            debug_rows.append({"title": title_dbg, "author_guess": author_dbg, "isbn": isbn_dbg or "", "openbd": ob_url if isbn_dbg else "", "status": status})
-        st.write(pd.DataFrame(debug_rows))
 
     # st.success("おすすめの本はこちらです！")
     st.markdown("## 🌟 特におすすめの1冊")
