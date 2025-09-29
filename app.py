@@ -75,7 +75,7 @@ st.markdown(
 
     /* Make the main content column comfortably narrow on large screens */
     @media (min-width: 1024px) {
-      .main .block-container { max-width: 1040px; }
+      .main .block-container { max-width: 900px; }
     }
 
     /* Mobile tweaks */
@@ -83,6 +83,7 @@ st.markdown(
       .stButton>button { width: 100%; }
       .stRadio, .stSelectbox { font-size: 0.98rem; }
       .stMarkdown p { font-size: 1.08rem; line-height: 1.7; }
+      .main .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
     }
 
     /* Cards & grid for desktop/mobile */
