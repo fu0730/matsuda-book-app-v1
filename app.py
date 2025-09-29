@@ -194,9 +194,16 @@ st.markdown(
     }
     @media (min-width: 768px) { .form-label { font-size: 1.25rem; } }
 
-    /* Clamp long descriptions on mobile */
+    /* Ensure full text visibility on mobile */
     @media (max-width: 640px) {
-      .book-desc { display: block; -webkit-line-clamp: initial; -webkit-box-orient: initial; overflow: visible; }
+      .book-desc, .hero-desc {
+        display: block !important;
+        -webkit-line-clamp: unset !important;
+        -webkit-box-orient: unset !important;
+        overflow: visible !important;
+        max-height: none !important;
+        white-space: normal !important;
+      }
     }
 
     /* details/summary styling */
