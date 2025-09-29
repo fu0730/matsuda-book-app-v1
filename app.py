@@ -1150,7 +1150,7 @@ if st.session_state.get("show_results"):
 </div>
 """
         hero_html = textwrap.dedent(hero_html).lstrip()
-    hero_full = f"""
+    hero_full = rf"""
 <style>
 body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;color:#374151;}}
 .hero-card,.book-card{{background:#fff;border:1px solid #E6E6E6;border-radius:10px;padding:16px 18px;box-shadow:0 2px 6px rgba(0,0,0,.05);}}
@@ -1170,6 +1170,23 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 }}
 </style>
 {hero_html}
+<script>
+  // Auto-resize the components.html iframe to fit content height (desktop fixes big gap)
+  (function(){{
+    function resize(){{
+      try{{
+        var fe = window.frameElement;
+        if(!fe) return;
+        // Measure full document height
+        var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        fe.style.height = Math.ceil(h) + 'px';
+      }}catch(e){{}}
+    }}
+    window.addEventListener('load', resize);
+    window.addEventListener('resize', function(){{ setTimeout(resize, 50); }});
+    setTimeout(resize, 100);
+  }})();
+</script>
 """
     components.html(hero_full, height=700, scrolling=False)
 
