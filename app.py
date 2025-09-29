@@ -172,13 +172,13 @@ st.markdown(
     }
 
     /* Section spacing (responsive, tighter) */
-    .section { margin: 20px 0; }
-    .section-hero { margin-bottom: 20px; }
-    .section-others { margin-top: 12px; }
+    .section { margin: 18px 0; }
+    .section-hero { margin-bottom: 12px; }
+    .section-others { margin-top: 10px; }
     @media (max-width: 640px){
-      .section { margin: 16px 0; }
-      .section-hero { margin-bottom: 14px; }
-      .section-others { margin-top: 10px; }
+      .section { margin: 14px 0; }
+      .section-hero { margin-bottom: 10px; }
+      .section-others { margin-top: 8px; }
     }
 
     /* Improve label wrapping & readability */
@@ -1194,12 +1194,7 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
 </script>
 """
     # --- PC/モバイル両対応: 説明文の長さから高さを多めに見積もり、縦並びスマホでも切れないようにする
-    _desc_len = len(str(pick.get("description", "")))
-    # モバイルの縦並びで画像+長文でも切れないように多めに見積もる
-    _estimated = 340 + int(_desc_len * 0.30)
-    # 下限をやや縮め(760)・上限も縮め(940)。PCではiframe内のスクリプトで自動縮小される
-    hero_height = max(760, min(940, _estimated))
-    components.html(hero_full, height=hero_height, scrolling=False)
+    st.markdown(hero_full, unsafe_allow_html=True)
 
     # with st.expander("debug: cover src", expanded=False):
     #     st.write(cover_url[:120] + ("..." if len(cover_url)>120 else ""))
