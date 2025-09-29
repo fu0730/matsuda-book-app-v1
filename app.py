@@ -77,6 +77,13 @@ st.markdown(
     @media (min-width: 1024px) {
       .main .block-container { max-width: 780px; }
     }
+    /* Desktop: tighten spacing specifically under components iframes (hero card) */
+    @media (min-width: 1024px){
+      /* Reduce default margin under Streamlit component iframes */
+      div[data-testid="stIFrame"]{ margin-bottom: 6px !important; }
+      /* Slightly reduce h2 top margin to bring the next heading closer */
+      h2{ margin-top: 0.7rem !important; }
+    }
 
     /* Mobile tweaks */
     @media (max-width: 640px) {
