@@ -1188,11 +1188,12 @@ body{{margin:0;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif
   }})();
 </script>
 """
-    # --- PCの余白対策: 説明文の長さから高さを概算してiframe高さを自動調整（上限700/下限360）
+    # --- PC/モバイル両対応: 説明文の長さから高さを多めに見積もり、縦並びスマホでも切れないようにする
     _desc_len = len(str(pick.get("description", "")))
-    # 横並び(PC)は行数が少ないため係数は控えめに、縦並び(スマホ)でも上限でカバー
-    _estimated = 320 + int(_desc_len * 0.18)
-    hero_height = max(360, min(700, _estimated))
+    # モバイルの縦並びで画像+長文でも切れないように多めに見積もる
+    _estimated = 360 + int(_desc_len * 0.32)
+    # 下限を広め(820)・上限も拡張(1000)。PCではiframe内のスクリプトで自動縮小される
+    hero_height = max(820, min(1000, _estimated))
     components.html(hero_full, height=hero_height, scrolling=False)
 
     # with st.expander("debug: cover src", expanded=False):
